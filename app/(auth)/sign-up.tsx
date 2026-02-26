@@ -19,7 +19,7 @@ export default function SignUpScreen() {
 
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
-    const [phone, setPhone] = useState('');
+    const [phone, setPhone] = useState('+91 ');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [localError, setLocalError] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export default function SignUpScreen() {
         }
 
         try {
-            await signUp(email.trim(), password, fullName.trim(), phone.trim());
+            await signUp(email.trim(), password, fullName.trim(), phone.replace(/\s+/g, ''));
             // If we get here without throwing, sign-up succeeded.
             // Show confirmation message — user needs to verify email.
             setSuccessMessage(

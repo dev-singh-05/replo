@@ -70,10 +70,14 @@ export interface StaffEquipmentReport {
 // ── Input Types ──────────────────────────────────────────────
 
 export interface CreateMemberInput {
-    user_id: string;
+    phone: string;
+    name: string;
     membership_number?: string;
-    emergency_contact?: string;
-    health_notes?: string;
+    joined_at?: string;
+    start_date?: string;
+    end_date?: string;
+    plan_type: 'monthly' | 'quarterly' | 'yearly' | 'custom';
+    initial_payment_status: 'paid' | 'unpaid';
 }
 
 export interface CreateSubscriptionInput {

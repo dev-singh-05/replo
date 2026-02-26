@@ -20,7 +20,7 @@ export default function CreateGymScreen() {
     const [name, setName] = useState('');
     const [slug, setSlug] = useState('');
     const [city, setCity] = useState('');
-    const [phone, setPhone] = useState('');
+    const [phone, setPhone] = useState('+91 ');
     const [localError, setLocalError] = useState<string | null>(null);
 
     // Auto-generate slug from name
@@ -55,7 +55,7 @@ export default function CreateGymScreen() {
                 name: name.trim(),
                 slug: slug.trim(),
                 city: city.trim() || undefined,
-                phone: phone.trim() || undefined,
+                phone: phone.replace(/\s+/g, '') || undefined,
             });
             // After gym creation, navigate to root which will route to owner stack
             router.replace('/');

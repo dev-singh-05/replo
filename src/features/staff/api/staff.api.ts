@@ -72,18 +72,34 @@ export const staffMembersApi = {
     },
 
     async create(input: CreateMemberInput) {
-        const { data, error } = await createTenantQuery('members')
-            .insert({
-                user_id: input.user_id,
-                membership_number: input.membership_number || null,
-                emergency_contact: input.emergency_contact || null,
-                health_notes: input.health_notes || null,
-                status: 'active',
-            })
-            .select('*, users(*)')
-            .single();
+        const gymId = getTenantId();
+
+        const { data, error } = await supabase.functions.invoke('process-member', {
+            body: {
+                gymId,
+                phone: input.phone,
+                name: input.name,
+                membershipNumber: input.membership_number,
+                joinedAt: input.joined_at,
+                startDate: input.start_date,
+                endDate: input.end_date,
+                planType: input.plan_type,
+                initialPaymentStatus: input.initial_payment_status
+            }
+        });
 
         if (error) handleSupabaseError(error);
+
+        // Fetch the newly created member to return
+        if (data && data.member_id) {
+            const { data: memberData, error: memberErr } = await createTenantQuery('members')
+                .select('*, users(*)')
+                .eq('id', data.member_id)
+                .single();
+            if (memberErr) handleSupabaseError(memberErr);
+            return memberData as unknown as StaffMember;
+        }
+
         return data as unknown as StaffMember;
     },
 
