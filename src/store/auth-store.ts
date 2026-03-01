@@ -17,6 +17,7 @@ const initialState: AuthState = {
     profile: null,
     gym: null,
     role: null,
+    selectedGymId: null,
     isHydrated: false,
     isLoading: false,
     error: null,
@@ -401,6 +402,12 @@ export const useAuthStore = create<AuthState & AuthActions>()((set, get) => {
                 const message = err instanceof Error ? err.message : 'Tenant resolution failed';
                 set({ error: message, isLoading: false });
             }
+        },
+
+        // ── Selected Gym (pre-login) ──────────────────────────────
+
+        setSelectedGymId: (gymId: string | null) => {
+            set({ selectedGymId: gymId });
         },
 
         // ── Clear ─────────────────────────────────────────────────

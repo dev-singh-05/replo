@@ -5,14 +5,16 @@
 // ============================================================
 
 import { createTenantQuery, getTenantId } from '@/src/core/api/queryBuilder';
-import { handleSupabaseError } from '@/src/core/api/types';
+import { AppError, handleSupabaseError } from '@/src/core/api/types';
 import { supabase } from '@/src/core/supabase/client';
 import type {
     BookingFilters,
     CreateBookingInput,
     CreateMemberInput,
+    CreateMemberResult,
     CreateSubscriptionInput,
     MemberFilters,
+    MembershipContract,
     ReportFilters,
     StaffAttendance,
     StaffBooking,
@@ -71,8 +73,11 @@ export const staffMembersApi = {
         return data as unknown as StaffMember;
     },
 
-    async create(input: CreateMemberInput) {
+    async create(input: CreateMemberInput): Promise<CreateMemberResult> {
         const gymId = getTenantId();
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
 
         const { data, error } = await supabase.functions.invoke('process-member', {
             body: {
@@ -85,22 +90,97 @@ export const staffMembersApi = {
                 endDate: input.end_date,
                 planType: input.plan_type,
                 initialPaymentStatus: input.initial_payment_status
-            }
+            },
+            headers: accessToken ? {
+                Authorization: `Bearer ${accessToken}`
+            } : undefined
         });
 
-        if (error) handleSupabaseError(error);
-
-        // Fetch the newly created member to return
-        if (data && data.member_id) {
-            const { data: memberData, error: memberErr } = await createTenantQuery('members')
-                .select('*, users(*)')
-                .eq('id', data.member_id)
-                .single();
-            if (memberErr) handleSupabaseError(memberErr);
-            return memberData as unknown as StaffMember;
+        // Network-level errors (function not found, timeout, etc.)
+        if (error) {
+            return {
+                status: 'error',
+                message: 'Network error. Please check your connection and try again.',
+            };
         }
 
-        return data as unknown as StaffMember;
+        // Structured conflict responses from edge function
+        if (data && !data.success) {
+            if (data.conflict === 'MEMBER_EXISTS_SAME_GYM') {
+                return {
+                    status: 'conflict_same_gym',
+                    message: data.message || 'This mobile number is already registered in your gym.',
+                    existingMemberId: data.existing_member_id,
+                };
+            }
+            if (data.conflict === 'MEMBER_EXISTS_OTHER_GYM') {
+                return {
+                    status: 'conflict_other_gym',
+                    message: data.message || 'This mobile number is registered with another gym.',
+                    targetUserId: data.target_user_id,
+                    targetUserName: data.target_user_name,
+                    hasPendingRequest: data.has_pending_request,
+                };
+            }
+            // Generic error from edge function
+            return {
+                status: 'error',
+                message: data.message || 'Failed to create member. Please try again.',
+            };
+        }
+
+        // Success — fetch the newly created member
+        if (data?.member_id) {
+            try {
+                const { data: memberData, error: memberErr } = await createTenantQuery('members')
+                    .select('*, users(*)')
+                    .eq('id', data.member_id)
+                    .single();
+                return {
+                    status: 'created',
+                    message: 'Member created successfully.',
+                    member: (memberErr ? { id: data.member_id } : memberData) as unknown as StaffMember,
+                };
+            } catch {
+                return {
+                    status: 'created',
+                    message: 'Member created successfully.',
+                    member: { id: data.member_id } as unknown as StaffMember,
+                };
+            }
+        }
+
+        return {
+            status: 'created',
+            message: 'Member created successfully.',
+            member: data as unknown as StaffMember,
+        };
+    },
+
+    async sendGymRequest(targetUserId: string) {
+        const gymId = getTenantId();
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const requestedBy = sessionData?.session?.user?.id;
+        if (!requestedBy) {
+            throw new AppError('UNAUTHORIZED', 'Not authenticated');
+        }
+
+        const { data, error } = await createTenantQuery('gym_membership_requests')
+            .insert({
+                user_id: targetUserId,
+                requested_by: requestedBy,
+                status: 'pending',
+            });
+
+        if (error) {
+            // Handle duplicate pending request
+            if (error.code === '23505') {
+                return { alreadySent: true };
+            }
+            handleSupabaseError(error);
+        }
+        return { alreadySent: false, data };
     },
 
     async update(id: string, payload: Partial<{ membership_number: string; emergency_contact: string; health_notes: string }>) {
@@ -207,6 +287,24 @@ export const staffSubscriptionsApi = {
 
         if (error) handleSupabaseError(error);
         return data as unknown as StaffSubscription;
+    },
+};
+
+// ── Membership Contracts ─────────────────────────────────────
+
+export const staffContractsApi = {
+    async fetchByMember(memberId: string) {
+        // membership_contracts has no gym_id column, so we use supabase directly.
+        // RLS policies on membership_contracts authorize via member_id → members → gym_staff.
+        const { data, error } = await supabase
+            .from('membership_contracts')
+            .select('*')
+            .eq('member_id', memberId)
+            .order('start_date', { ascending: false })
+            .limit(20);
+
+        if (error) handleSupabaseError(error);
+        return (data ?? []) as unknown as MembershipContract[];
     },
 };
 

@@ -13,6 +13,7 @@ export default function MemberLayout() {
             <Stack.Screen name="workouts" />
             <Stack.Screen name="diets" />
             <Stack.Screen name="feedback" />
+            <Stack.Screen name="gym-requests" />
         </Stack>
     );
 }

@@ -1,12 +1,12 @@
 import { useMutation } from '@/src/core/hooks/useMutation';
 import { useQuery } from '@/src/core/hooks/useQuery';
 import type { AppRole } from '@/src/types/auth';
-import { staffAttendanceApi, staffMembersApi, staffSubscriptionsApi } from '../api/staff.api';
-import type { StaffAttendance, StaffMember, StaffSubscription } from '../types';
+import { staffAttendanceApi, staffContractsApi, staffMembersApi } from '../api/staff.api';
+import type { MembershipContract, StaffAttendance, StaffMember } from '../types';
 import { MUTATION_ROLES, STAFF_ROLES } from '../types';
 
 /**
- * Full member detail: profile, subscriptions, attendance history.
+ * Full member detail: profile, contracts (membership), attendance history.
  */
 export function useMemberDetail(memberId: string | null) {
     const member = useQuery<StaffMember>({
@@ -16,8 +16,8 @@ export function useMemberDetail(memberId: string | null) {
         dependencies: [memberId],
     });
 
-    const subscriptions = useQuery<StaffSubscription[]>({
-        fetcher: () => staffSubscriptionsApi.fetchByMember(memberId!),
+    const contracts = useQuery<MembershipContract[]>({
+        fetcher: () => staffContractsApi.fetchByMember(memberId!),
         enabled: !!memberId,
         allowedRoles: [...STAFF_ROLES] as AppRole[],
         dependencies: [memberId],
@@ -37,13 +37,14 @@ export function useMemberDetail(memberId: string | null) {
 
     return {
         member,
-        subscriptions,
+        contracts,
         attendance,
         updateMember,
         refetchAll: () => {
             member.refetch();
-            subscriptions.refetch();
+            contracts.refetch();
             attendance.refetch();
         },
     };
 }
+

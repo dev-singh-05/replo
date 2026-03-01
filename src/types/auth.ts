@@ -25,6 +25,8 @@ export interface AuthState {
     gym: Gym | null;
     /** Resolved user role within the gym */
     role: AppRole | null;
+    /** Pre-login gym selection (before sign-in) */
+    selectedGymId: string | null;
     /** Whether the initial hydration has completed */
     isHydrated: boolean;
     /** Whether an async action is in progress */
@@ -53,6 +55,8 @@ export interface AuthActions {
     completeOnboardingStep: (step: 'first_login' | 'profile') => Promise<void>;
     /** Resolve gym + role from the database */
     resolveTenant: (userId: string) => Promise<void>;
+    /** Set pre-login gym selection */
+    setSelectedGymId: (gymId: string | null) => void;
     /** Reset store to initial state */
     clear: () => void;
 }

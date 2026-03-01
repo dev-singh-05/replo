@@ -3,12 +3,15 @@ import { usePathname, useRouter } from 'expo-router';
 import React from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
+    Platform,
     StyleSheet,
     Text, TextInput, TouchableOpacity,
     View,
 } from 'react-native';
 import { MemberCard } from '../components/MemberCard';
+import { useIncomingRequests } from '../hooks/useIncomingRequests';
 import { useMembers } from '../hooks/useMembers';
 
 const STATUS_OPTIONS = [
@@ -27,6 +30,37 @@ export default function MemberListScreen() {
         data, isLoading, isFetchingMore, hasMore, loadMore, refetch,
         filters, setSearch, setStatusFilter,
     } = useMembers();
+    const { requests: incomingRequests, pendingCount, rejectRequest, markApproved, refetch: refetchRequests } = useIncomingRequests();
+
+    const handleAccept = (req: typeof incomingRequests[0]) => {
+        // Navigate to CreateMember with pre-filled user data
+        const params = new URLSearchParams({
+            requestId: req.id,
+            userId: req.user_id,
+            name: req.users?.full_name || '',
+            phone: req.users?.phone || '',
+        });
+        router.push(`${routePrefix}/create-member?${params.toString()}` as any);
+    };
+
+    const handleReject = async (req: typeof incomingRequests[0]) => {
+        const gymName = req.users?.full_name || 'this user';
+        const doReject = async () => {
+            const result = await rejectRequest(req.id);
+            if (!result.success) {
+                const msg = result.error || 'Failed to reject';
+                Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Error', msg);
+            }
+        };
+        if (Platform.OS === 'web') {
+            if (window.confirm(`Reject request from ${gymName}?`)) await doReject();
+        } else {
+            Alert.alert('Reject Request', `Reject request from ${gymName}?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Reject', style: 'destructive', onPress: doReject },
+            ]);
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -65,6 +99,41 @@ export default function MemberListScreen() {
                     </TouchableOpacity>
                 ))}
             </View>
+
+            {/* Incoming Requests */}
+            {pendingCount > 0 && (
+                <View style={styles.requestsSection}>
+                    <Text style={styles.requestsTitle}>
+                        📩 {pendingCount} Join Request{pendingCount > 1 ? 's' : ''}
+                    </Text>
+                    {incomingRequests.map((req) => (
+                        <View key={req.id} style={styles.reqCard}>
+                            <View style={styles.reqInfo}>
+                                <Text style={styles.reqName}>{req.users?.full_name || 'Unknown'}</Text>
+                                <Text style={styles.reqPhone}>{req.users?.phone || 'No phone'}</Text>
+                                <Text style={styles.reqDate}>
+                                    {new Date(req.created_at).toLocaleDateString()}
+                                </Text>
+                            </View>
+                            <View style={styles.reqActions}>
+                                <TouchableOpacity
+                                    style={styles.reqAcceptBtn}
+                                    onPress={() => handleAccept(req)}
+                                >
+                                    <Ionicons name="checkmark" size={16} color="#fff" />
+                                    <Text style={styles.reqAcceptText}>Accept</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.reqRejectBtn}
+                                    onPress={() => handleReject(req)}
+                                >
+                                    <Ionicons name="close" size={16} color="#ef4444" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    ))}
+                </View>
+            )}
 
             {/* Member List */}
             <FlatList
@@ -125,4 +194,28 @@ const styles = StyleSheet.create({
     listContent: { paddingHorizontal: 16, paddingBottom: 24 },
     empty: { alignItems: 'center', paddingTop: 60, gap: 12 },
     emptyText: { color: '#6b7280', fontSize: 14 },
+    // Incoming requests
+    requestsSection: {
+        marginHorizontal: 16, marginBottom: 12, backgroundColor: 'rgba(99, 102, 241, 0.08)',
+        borderRadius: 12, padding: 14, borderWidth: 1, borderColor: 'rgba(99, 102, 241, 0.2)',
+    },
+    requestsTitle: { fontSize: 15, fontWeight: '700', color: '#f9fafb', marginBottom: 10 },
+    reqCard: {
+        flexDirection: 'row', alignItems: 'center', backgroundColor: '#111827',
+        borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#1f2937',
+    },
+    reqInfo: { flex: 1 },
+    reqName: { fontSize: 15, fontWeight: '600', color: '#f9fafb', marginBottom: 2 },
+    reqPhone: { fontSize: 13, color: '#9ca3af' },
+    reqDate: { fontSize: 11, color: '#6b7280', marginTop: 2 },
+    reqActions: { flexDirection: 'row', gap: 6 },
+    reqAcceptBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        backgroundColor: '#22c55e', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    },
+    reqAcceptText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+    reqRejectBtn: {
+        width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(239, 68, 68, 0.12)', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)',
+    },
 });

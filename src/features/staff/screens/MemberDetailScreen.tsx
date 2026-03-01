@@ -15,7 +15,7 @@ import { useMemberDetail } from '../hooks/useMemberDetail';
 export default function MemberDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
-    const { member, subscriptions, attendance, refetchAll } = useMemberDetail(id ?? null);
+    const { member, contracts, attendance, refetchAll } = useMemberDetail(id ?? null);
 
     if (member.isLoading) {
         return (
@@ -34,7 +34,11 @@ export default function MemberDetailScreen() {
         );
     }
 
-    const name = m.users?.full_name ?? 'Unknown';
+    const name = m.users?.full_name || 'Not Provided';
+
+    const formatPlanType = (type: string) => {
+        return type.charAt(0).toUpperCase() + type.slice(1);
+    };
 
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -62,23 +66,22 @@ export default function MemberDetailScreen() {
                 </Text>
             </View>
 
-            {/* Subscriptions */}
-            <Text style={styles.sectionTitle}>Subscriptions</Text>
-            {subscriptions.isLoading ? (
+            {/* Membership / Contracts */}
+            <Text style={styles.sectionTitle}>Membership</Text>
+            {contracts.isLoading ? (
                 <ActivityIndicator color="#6366f1" />
-            ) : (subscriptions.data ?? []).length === 0 ? (
-                <Text style={styles.emptyText}>No subscriptions</Text>
+            ) : (contracts.data ?? []).length === 0 ? (
+                <Text style={styles.emptyText}>No active membership</Text>
             ) : (
-                (subscriptions.data ?? []).map((sub) => (
-                    <View key={sub.id} style={styles.subCard}>
+                (contracts.data ?? []).map((contract) => (
+                    <View key={contract.id} style={styles.subCard}>
                         <View style={styles.subRow}>
-                            <Text style={styles.subPlan}>{sub.plans?.name ?? 'Plan'}</Text>
-                            <StatusBadge status={sub.status} small />
+                            <Text style={styles.subPlan}>{formatPlanType(contract.plan_type)} Plan</Text>
+                            <StatusBadge status={contract.status} small />
                         </View>
                         <Text style={styles.subDates}>
-                            {sub.start_date} → {sub.end_date}
+                            {contract.start_date} → {contract.end_date}
                         </Text>
-                        <Text style={styles.subAmount}>₹{sub.amount_paid}</Text>
                     </View>
                 ))
             )}

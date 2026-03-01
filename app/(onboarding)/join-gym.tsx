@@ -4,7 +4,7 @@ import type { Gym } from '@/src/types/database';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function JoinGymScreen() {
@@ -16,6 +16,7 @@ export default function JoinGymScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isJoining, setIsJoining] = useState(false);
+    const [requestedGyms, setRequestedGyms] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         fetchGyms();
@@ -37,30 +38,59 @@ export default function JoinGymScreen() {
         }
     };
 
-    const handleJoin = async (gymId: string) => {
+    const handleJoin = async (gymId: string, gymName: string) => {
         if (!user) return;
         setIsJoining(true);
         try {
-            // 1. Insert into members table (creates relationship)
-            const { error: memberError } = await supabase
+            // 1. Check if user already has a member record in this gym
+            //    (owner/staff pre-registered them using their phone number)
+            const { data: existing } = await supabase
                 .from('members')
+                .select('id')
+                .eq('gym_id', gymId)
+                .eq('user_id', user.id)
+                .maybeSingle();
+
+            if (existing) {
+                // Already a member — just link profile and go
+                await updateProfileDetails({ gym_id: gymId });
+                await refreshProfile();
+                router.replace('/');
+                return;
+            }
+
+            // 2. Not pre-registered — send a membership request
+            const { error: reqError } = await supabase
+                .from('gym_membership_requests')
                 .insert({
                     gym_id: gymId,
                     user_id: user.id,
-                    status: 'active', // usually 'pending', but matching prompt simplify
+                    requested_by: user.id,
+                    status: 'pending',
                 });
 
-            if (memberError && memberError.code !== '23505') throw memberError; // ignore unique violation if already member
+            // Ignore duplicate request (already pending)
+            if (reqError && reqError.code !== '23505') throw reqError;
 
-            // 2. Set gym_id on profile to clear onboarding flag
-            await updateProfileDetails({ gym_id: gymId });
+            setRequestedGyms((prev) => new Set(prev).add(gymId));
 
-            // 3. Re-resolve tenant to pick up member role
-            await refreshProfile();
+            const msg = reqError?.code === '23505'
+                ? `You already have a pending request for ${gymName}.`
+                : `Registration request sent to ${gymName}! The gym owner will review your request.`;
 
-            router.replace('/');
+            if (Platform.OS === 'web') {
+                window.alert(msg);
+            } else {
+                Alert.alert('Request Sent', msg);
+            }
         } catch (err: any) {
-            Alert.alert('Error joining gym', err.message || 'Check connection');
+            const msg = err.message || 'Something went wrong';
+            if (Platform.OS === 'web') {
+                window.alert('Error: ' + msg);
+            } else {
+                Alert.alert('Error', msg);
+            }
+        } finally {
             setIsJoining(false);
         }
     };
@@ -118,13 +148,21 @@ export default function JoinGymScreen() {
                                     {item.city ? `${item.city}, ${item.country}` : item.country}
                                 </Text>
                             </View>
-                            <TouchableOpacity
-                                style={styles.joinBtn}
-                                onPress={() => handleJoin(item.id)}
-                                disabled={isJoining}
-                            >
-                                <Text style={styles.joinBtnText}>Join</Text>
-                            </TouchableOpacity>
+                            {requestedGyms.has(item.id) ? (
+                                <View style={[styles.joinBtn, styles.requestedBtn]}>
+                                    <Text style={styles.requestedBtnText}>Requested ✓</Text>
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.joinBtn}
+                                    onPress={() => handleJoin(item.id, item.name)}
+                                    disabled={isJoining}
+                                >
+                                    <Text style={styles.joinBtnText}>
+                                        {isJoining ? '...' : 'Send Request'}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     )}
                     ListEmptyComponent={
@@ -158,6 +196,8 @@ const styles = StyleSheet.create({
     gymCity: { fontSize: 13, color: '#9ca3af' },
     joinBtn: { backgroundColor: '#6366f1', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
     joinBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+    requestedBtn: { backgroundColor: 'rgba(34, 197, 94, 0.15)', borderWidth: 1, borderColor: 'rgba(34, 197, 94, 0.3)' },
+    requestedBtnText: { color: '#22c55e', fontSize: 13, fontWeight: '600' },
     emptyText: { color: '#6b7280', textAlign: 'center', marginTop: 32 },
     footer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 24, paddingHorizontal: 24, backgroundColor: '#0a0a0a', borderTopWidth: 1, borderTopColor: '#1f2937', alignItems: 'center' },
     skipText: { color: '#9ca3af', fontSize: 15, fontWeight: '500' }

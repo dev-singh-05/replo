@@ -3,7 +3,7 @@ import { usePaginatedQuery } from '@/src/core/hooks/usePaginatedQuery';
 import type { AppRole } from '@/src/types/auth';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { staffMembersApi } from '../api/staff.api';
-import type { CreateMemberInput, MemberFilters, StaffMember } from '../types';
+import type { CreateMemberInput, CreateMemberResult, MemberFilters, StaffMember } from '../types';
 import { MUTATION_ROLES, STAFF_ROLES } from '../types';
 
 /**
@@ -45,8 +45,13 @@ export function useMembers() {
         dependencies: [debouncedSearch, filters.status],
     });
 
-    const createMember = useMutation<StaffMember, CreateMemberInput>({
+    const createMember = useMutation<CreateMemberResult, CreateMemberInput>({
         mutationFn: staffMembersApi.create,
+        allowedRoles: [...MUTATION_ROLES] as AppRole[],
+    });
+
+    const sendGymRequest = useMutation<any, string>({
+        mutationFn: staffMembersApi.sendGymRequest,
         allowedRoles: [...MUTATION_ROLES] as AppRole[],
     });
 
@@ -66,6 +71,7 @@ export function useMembers() {
         setSearch,
         setStatusFilter,
         createMember,
+        sendGymRequest,
         suspendMember,
         reactivateMember,
     };

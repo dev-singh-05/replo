@@ -27,6 +27,19 @@ export interface StaffSubscription {
     members?: { id: string; membership_number: string | null; users: UserProfile | null } | null;
 }
 
+export interface MembershipContract {
+    id: string;
+    member_id: string;
+    start_date: string;
+    end_date: string;
+    plan_type: 'monthly' | 'quarterly' | 'yearly' | 'custom';
+    status: 'active' | 'paused' | 'expired';
+    pause_start_date: string | null;
+    pause_end_date: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface StaffAttendance {
     id: string;
     gym_id: string;
@@ -78,6 +91,16 @@ export interface CreateMemberInput {
     end_date?: string;
     plan_type: 'monthly' | 'quarterly' | 'yearly' | 'custom';
     initial_payment_status: 'paid' | 'unpaid';
+}
+
+export interface CreateMemberResult {
+    status: 'created' | 'conflict_same_gym' | 'conflict_other_gym' | 'error';
+    message: string;
+    member?: StaffMember;
+    existingMemberId?: string;
+    targetUserId?: string;
+    targetUserName?: string;
+    hasPendingRequest?: boolean;
 }
 
 export interface CreateSubscriptionInput {

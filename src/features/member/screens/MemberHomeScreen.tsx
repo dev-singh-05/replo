@@ -17,6 +17,7 @@ import {
     View,
 } from 'react-native';
 import StatusBadge from '../components/StatusBadge';
+import { useGymRequests } from '../hooks/useGymRequests';
 import { useMemberHome } from '../hooks/useMemberHome';
 
 const quickActions = [
@@ -32,6 +33,7 @@ export default function MemberHomeScreen() {
     const router = useRouter();
     const { gym, signOut } = useAuth();
     const { homeData, isLoading, error, refetch } = useMemberHome();
+    const { pendingCount } = useGymRequests();
 
     return (
         <ScrollView
@@ -54,6 +56,24 @@ export default function MemberHomeScreen() {
                     <Ionicons name="log-out-outline" size={18} color="#ef4444" />
                 </TouchableOpacity>
             </View>
+
+            {/* Pending Request Status */}
+            {pendingCount > 0 && (
+                <View style={styles.requestBanner}>
+                    <View style={styles.requestBannerIcon}>
+                        <Ionicons name="time" size={20} color="#f59e0b" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.requestBannerTitle}>
+                            {pendingCount} Gym Request{pendingCount > 1 ? 's' : ''} Pending
+                        </Text>
+                        <Text style={styles.requestBannerSubtext}>
+                            Waiting for the gym owner to approve your request
+                        </Text>
+                    </View>
+                    <Ionicons name="hourglass" size={18} color="#f59e0b" />
+                </View>
+            )}
 
             {/* Subscription Summary */}
             {isLoading && !homeData.activeSubscription ? (
@@ -233,4 +253,19 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     tileLabel: { fontSize: 14, fontWeight: '600', color: '#e5e7eb' },
+
+    // Gym request banner
+    requestBanner: {
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        backgroundColor: 'rgba(245, 158, 11, 0.1)', borderRadius: 12,
+        padding: 14, marginBottom: 16,
+        borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.25)',
+    },
+    requestBannerIcon: {
+        width: 40, height: 40, borderRadius: 10,
+        backgroundColor: 'rgba(245, 158, 11, 0.15)',
+        alignItems: 'center', justifyContent: 'center',
+    },
+    requestBannerTitle: { fontSize: 15, fontWeight: '600', color: '#f9fafb' },
+    requestBannerSubtext: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
 });

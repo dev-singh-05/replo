@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator, Alert,
@@ -10,16 +10,26 @@ import {
     TouchableOpacity, View
 } from 'react-native';
 import { FormInput } from '../components/FormInput';
+import { useIncomingRequests } from '../hooks/useIncomingRequests';
 import { useMembers } from '../hooks/useMembers';
 
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function CreateMemberScreen() {
     const router = useRouter();
-    const { createMember } = useMembers();
+    const params = useLocalSearchParams<{
+        requestId?: string;
+        userId?: string;
+        name?: string;
+        phone?: string;
+    }>();
+    const isFromRequest = !!params.requestId;
 
-    const [phone, setPhone] = useState('+91 ');
-    const [name, setName] = useState('');
+    const { createMember, sendGymRequest } = useMembers();
+    const { markApproved } = useIncomingRequests();
+
+    const [phone, setPhone] = useState(params.phone || '+91 ');
+    const [name, setName] = useState(params.name || '');
     const [membershipNumber, setMembershipNumber] = useState('');
     const [joinedAt, setJoinedAt] = useState<Date | null>(null);
     const [startDate, setStartDate] = useState<Date>(new Date());
@@ -31,6 +41,13 @@ export default function CreateMemberScreen() {
     const [showStartPicker, setShowStartPicker] = useState(false);
 
     const [errors, setErrors] = useState<Record<string, string>>({});
+
+    // Conflict handling state
+    const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+    const [showCrossGymDialog, setShowCrossGymDialog] = useState(false);
+    const [crossGymUserId, setCrossGymUserId] = useState<string | null>(null);
+    const [crossGymUserName, setCrossGymUserName] = useState<string | null>(null);
+    const [requestSent, setRequestSent] = useState(false);
 
     // Calculate next renewal date for preview
     const getNextRenewalDate = () => {
@@ -55,8 +72,13 @@ export default function CreateMemberScreen() {
     const handleSubmit = async () => {
         if (!validate()) return;
 
+        // Clear previous conflict state
+        setConflictMessage(null);
+        setShowCrossGymDialog(false);
+        setRequestSent(false);
+
         try {
-            await createMember.mutate({
+            const result = await createMember.mutate({
                 phone: phone.replace(/\s+/g, ''),
                 name: name.trim(),
                 membership_number: membershipNumber.trim() || undefined,
@@ -65,11 +87,61 @@ export default function CreateMemberScreen() {
                 plan_type: planType,
                 initial_payment_status: initialPaymentStatus
             });
-            Alert.alert('Success', 'Member, contract & billing cycle created successfully!', [
-                { text: 'OK', onPress: () => router.back() },
-            ]);
+
+            if (!result) return;
+
+            switch (result.status) {
+                case 'created':
+                    // If from a request, mark it as approved
+                    if (isFromRequest && params.requestId) {
+                        await markApproved(params.requestId);
+                    }
+                    if (Platform.OS === 'web') {
+                        window.alert('Member, contract & billing cycle created successfully!');
+                        router.back();
+                    } else {
+                        Alert.alert('Success', 'Member, contract & billing cycle created successfully!', [
+                            { text: 'OK', onPress: () => router.back() },
+                        ]);
+                    }
+                    break;
+
+                case 'conflict_same_gym':
+                    setConflictMessage(result.message);
+                    break;
+
+                case 'conflict_other_gym':
+                    setCrossGymUserId(result.targetUserId || null);
+                    setCrossGymUserName(result.targetUserName || null);
+                    if (result.hasPendingRequest) {
+                        setConflictMessage('A registration request is already pending for this member.');
+                    } else {
+                        setShowCrossGymDialog(true);
+                    }
+                    break;
+
+                case 'error':
+                    setConflictMessage(result.message);
+                    break;
+            }
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to create member');
+            setConflictMessage(err.message || 'Failed to create member. Please try again.');
+        }
+    };
+
+    const handleSendRequest = async () => {
+        if (!crossGymUserId) return;
+        try {
+            const result = await sendGymRequest.mutate(crossGymUserId);
+            setRequestSent(true);
+            setShowCrossGymDialog(false);
+            if (result?.alreadySent) {
+                setConflictMessage('A registration request was already sent to this member.');
+            } else {
+                setConflictMessage('Registration request sent! The member will need to approve it.');
+            }
+        } catch (err: any) {
+            setConflictMessage(err.message || 'Failed to send request. Please try again.');
         }
     };
 
@@ -84,15 +156,79 @@ export default function CreateMemberScreen() {
                     <Text style={styles.backText}>Back</Text>
                 </TouchableOpacity>
 
-                <Text style={styles.title}>Add New Member</Text>
+                <Text style={styles.title}>
+                    {isFromRequest ? 'Accept Join Request' : 'Add New Member'}
+                </Text>
+
+                {/* Pre-filled from request banner */}
+                {isFromRequest && (
+                    <View style={[styles.conflictBox, styles.conflictBoxInfo]}>
+                        <Ionicons name="person-add" size={20} color="#22c55e" />
+                        <Text style={[styles.conflictText, styles.conflictTextInfo]}>
+                            {params.name}'s details are pre-filled. Just set the subscription details below.
+                        </Text>
+                    </View>
+                )}
+
+                {/* Conflict message banner */}
+                {conflictMessage && (
+                    <View style={[styles.conflictBox, requestSent && styles.conflictBoxInfo]}>
+                        <Ionicons
+                            name={requestSent ? 'checkmark-circle' : 'warning'}
+                            size={20}
+                            color={requestSent ? '#22c55e' : '#f59e0b'}
+                        />
+                        <Text style={[styles.conflictText, requestSent && styles.conflictTextInfo]}>
+                            {conflictMessage}
+                        </Text>
+                    </View>
+                )}
+
+                {/* Cross-gym dialog */}
+                {showCrossGymDialog && (
+                    <View style={styles.crossGymDialog}>
+                        <Ionicons name="people" size={24} color="#6366f1" />
+                        <Text style={styles.crossGymTitle}>Member at Another Gym</Text>
+                        <Text style={styles.crossGymMessage}>
+                            {crossGymUserName
+                                ? `"${crossGymUserName}" is registered with another gym.`
+                                : 'This mobile number is registered with another gym.'}
+                        </Text>
+                        <Text style={styles.crossGymSubtext}>
+                            Send a registration request. The member must approve before being added to your gym.
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.requestBtn}
+                            onPress={handleSendRequest}
+                            disabled={sendGymRequest.isLoading}
+                        >
+                            {sendGymRequest.isLoading ? (
+                                <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                                <Text style={styles.requestBtnText}>Send Registration Request</Text>
+                            )}
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setShowCrossGymDialog(false)}>
+                            <Text style={styles.crossGymCancel}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
 
                 <FormInput
                     label="Mobile Number"
                     value={phone}
-                    onChangeText={setPhone}
+                    onChangeText={(text) => {
+                        setPhone(text);
+                        setConflictMessage(null);
+                        setShowCrossGymDialog(false);
+                        setRequestSent(false);
+                    }}
                     placeholder="+91 9876543210"
                     error={errors.phone}
                     keyboardType="phone-pad"
+                    editable={!isFromRequest}
+                    style={isFromRequest ? { opacity: 0.6 } : undefined}
+                    hint={isFromRequest ? 'Set by user — cannot be changed' : undefined}
                 />
 
                 <FormInput
@@ -101,6 +237,9 @@ export default function CreateMemberScreen() {
                     onChangeText={setName}
                     placeholder="e.g. John Doe"
                     error={errors.name}
+                    editable={!isFromRequest}
+                    style={isFromRequest ? { opacity: 0.6 } : undefined}
+                    hint={isFromRequest ? 'Set by user — cannot be changed' : undefined}
                 />
 
                 <FormInput
@@ -255,4 +394,30 @@ const styles = StyleSheet.create({
     },
     btnDisabled: { opacity: 0.6 },
     submitText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+    // Conflict handling styles
+    conflictBox: {
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        backgroundColor: 'rgba(245, 158, 11, 0.1)', borderWidth: 1,
+        borderColor: 'rgba(245, 158, 11, 0.3)', borderRadius: 10,
+        padding: 14, marginBottom: 16,
+    },
+    conflictBoxInfo: {
+        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        borderColor: 'rgba(34, 197, 94, 0.3)',
+    },
+    conflictText: { color: '#f59e0b', fontSize: 14, flex: 1, lineHeight: 20 },
+    conflictTextInfo: { color: '#22c55e' },
+    crossGymDialog: {
+        backgroundColor: '#111827', borderWidth: 1, borderColor: '#374151',
+        borderRadius: 12, padding: 20, marginBottom: 16, alignItems: 'center',
+    },
+    crossGymTitle: { color: '#f9fafb', fontSize: 18, fontWeight: '700', marginTop: 8, marginBottom: 8 },
+    crossGymMessage: { color: '#d1d5db', fontSize: 14, textAlign: 'center', marginBottom: 4 },
+    crossGymSubtext: { color: '#9ca3af', fontSize: 13, textAlign: 'center', marginBottom: 16 },
+    requestBtn: {
+        backgroundColor: '#6366f1', borderRadius: 10, paddingVertical: 14,
+        paddingHorizontal: 24, alignItems: 'center', width: '100%', marginBottom: 8,
+    },
+    requestBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+    crossGymCancel: { color: '#9ca3af', fontSize: 14, marginTop: 4 },
 });

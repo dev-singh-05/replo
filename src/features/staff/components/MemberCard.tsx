@@ -10,7 +10,7 @@ interface Props {
 }
 
 export function MemberCard({ member, onPress }: Props) {
-    const name = member.users?.full_name ?? 'Unknown';
+    const name = member.users?.full_name || 'Not Provided';
     const phone = member.users?.phone ?? '';
 
     return (

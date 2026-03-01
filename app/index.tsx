@@ -15,12 +15,18 @@ export default function RootIndex() {
     const gym = useAuthStore((s) => s.gym);
     const role = useAuthStore((s) => s.role);
     const isHydrated = useAuthStore((s) => s.isHydrated);
+    const selectedGymId = useAuthStore((s) => s.selectedGymId);
 
     useEffect(() => {
         if (!isHydrated) return;
 
         if (!session) {
-            router.replace('/(auth)/sign-in' as Href);
+            // No session — show gym selection first if user hasn't picked one
+            if (!selectedGymId) {
+                router.replace('/gym-selection' as Href);
+            } else {
+                router.replace('/(auth)/sign-in' as Href);
+            }
             return;
         }
 
@@ -66,7 +72,7 @@ export default function RootIndex() {
             default:
                 router.replace('/(auth)/sign-in' as Href);
         }
-    }, [isHydrated, session, profile, gym, role, router]);
+    }, [isHydrated, session, profile, gym, role, selectedGymId, router]);
 
     return (
         <View style={styles.container}>
